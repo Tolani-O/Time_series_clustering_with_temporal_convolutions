@@ -124,6 +124,8 @@ class TemporalConvNet(nn.Module):
 
         # Attention layer
         self.AttnScores = SimpleAttentionScores()
+        # Post attention linear layer
+        self.PostAttnFiringLinr = nn.Linear(state_size[0], 1)
 
     # Will need to train the network on the ground truth to initialize
     # The neuron couplings and firing rates at the ground truth
@@ -158,6 +160,7 @@ class TemporalConvNet(nn.Module):
         cluster_attn = self.AttnScores(bin_cluster_output.squeeze(-1), state_cluster_output.squeeze(-1))
         cluster_attn = F.softmax(cluster_attn, dim=-1)
         firing_attn = self.AttnScores(bin_firing_output.squeeze(-1), state_firing_output.squeeze(-1))
+        firing_attn = self.PostAttnFiringLinr(firing_attn)
         firing_attn = F.softplus(firing_attn)
         latent_coeffs = F.softplus(self.state)
         return latent_coeffs, cluster_attn, firing_attn

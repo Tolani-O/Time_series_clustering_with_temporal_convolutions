@@ -49,6 +49,9 @@ parser.add_argument('--param_seed', type=int_or_str, default='TRUTH', help='')
 
 args = parser.parse_args()
 
+args.notes = 'Random_States'
+args.param_seed = ''
+
 if args.param_seed == '':
     args.param_seed = np.random.randint(0, 2 ** 32 - 1)
 data_seed = np.random.randint(0, 2 ** 32 - 1)
