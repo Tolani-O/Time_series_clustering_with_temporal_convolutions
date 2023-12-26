@@ -70,7 +70,7 @@ class NegLogLikelihood(nn.Module):
         self.tau_beta = tau_beta
         self.tau_s = tau_s
         # Initialize the TCN Network's transformed parameters
-        self.latent_coeffs = nn.Parameter(torch.cat((torch.zeros(1, state_size[1]), torch.randn(state_size[0] - 1, state_size[1])), dim=0))
+        self.state = nn.Parameter(torch.cat((torch.zeros(1, state_size[1]), torch.randn(state_size[0] - 1, state_size[1])), dim=0))
         self.cluster_attn = nn.Parameter(torch.randn(batch_size, state_size[0]))
         self.firing_attn = nn.Parameter(torch.randn(batch_size, state_size[0]))
         # Create loss
@@ -95,13 +95,18 @@ class NegLogLikelihood(nn.Module):
 
     def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, mode=''):
         if mode=='initialize_output':
-            negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, self.latent_coeffs, self.cluster_attn, self.firing_attn)
-            return negLogLikelihood, latent_factors
+            latent_coeffs = F.softplus(self.state)
+            cluster_attn = F.softmax(self.cluster_attn, dim=-1)
+            firing_attn = F.softplus(self.firing_attn)
+            negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, latent_coeffs, cluster_attn, firing_attn)
+            return negLogLikelihood, latent_factors, cluster_attn, firing_attn
         elif mode=='initialize_map':
+            latent_coeffs = F.softplus(self.state)
+            latent_factors = torch.matmul(latent_coeffs, self.Bspline_matrix)
             cluster_loss = self.mse_loss(self.cluster_attn, cluster_attn)
             firing_loss = self.mse_loss(self.firing_attn, firing_attn)
             loss = cluster_loss + firing_loss
-            return loss
+            return loss, latent_factors
         else:
             negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, latent_coeffs, cluster_attn, firing_attn)
             penalty, smoothness_budget_constrained = self.penalty_term(latent_factors)

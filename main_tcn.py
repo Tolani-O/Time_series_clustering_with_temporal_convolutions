@@ -9,13 +9,13 @@ from torch.utils.data import DataLoader
 from src.TCN.tcn import TemporalConvNet, CustomDataset, NegLogLikelihood
 from src.simulate_data import DataAnalyzer
 import numpy as np
-from src.TCN.general_functions import int_or_str, create_second_diff_matrix, plot_outputs, write_losses, plot_spikes, \
-    plot_intensity_and_latents, plot_latent_coupling, plot_losses, write_log_and_model, create_relevant_files, \
+from src.TCN.general_functions import int_or_str, create_second_diff_matrix, plot_spikes, \
+    plot_intensity_and_latents, plot_latent_coupling, create_relevant_files, \
     load_model_checkpoint
 from src.TCN.main_learn_initial_outputs import learn_initial_outputs
 from src.TCN.main_learn_initial_maps import learn_initial_maps
+from src.TCN.main_finetune_maps import finetune_maps
 from scipy.interpolate import BSpline
-import time
 
 parser = argparse.ArgumentParser(description='Sequence Modeling - Polyphonic Music')
 parser.add_argument('--cuda', action='store_false', default=False, help='use CUDA (default: False)')
@@ -161,42 +161,6 @@ loss_optimizer = getattr(optim, args.optim)(loss_function.parameters(), lr=lr)
 # print('DONE')
 
 
-def train(log_likelihoods, losses):
-    model.train()
-    loss_function.train()
-    for binned in dataloader:
-        if args.cuda: binned = binned.cuda()
-        # Zero out the gradients for both optimizers
-        model_optimizer.zero_grad()
-        loss_optimizer.zero_grad()
-        latent_coeffs, cluster_attn, firing_attn = model(binned)
-        loss, LogLikelihood, smoothness_budget_constrained = loss_function(binned, latent_coeffs, cluster_attn, firing_attn)
-        log_likelihoods.append(-LogLikelihood.item())
-        losses.append(-loss.item())
-        if args.clip > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        # Backpropagate the loss through both the model and the loss_function
-        loss.backward()
-        # Update the parameters for both the model and the loss_function
-        model_optimizer.step()
-        loss_optimizer.step()
-
-    return log_likelihoods, losses, smoothness_budget_constrained
-
-
-def evaluate(data, log_likelihoods, losses):
-    model.eval()
-    loss_function.eval()
-    with torch.no_grad():
-        data = torch.stack(data)
-        if args.cuda: data = data.cuda()
-        latent_coeffs, cluster_attn, firing_attn = model(data)
-        loss, LogLikelihood, _ = loss_function(data, latent_coeffs, cluster_attn, firing_attn)
-    log_likelihoods.append(-LogLikelihood.item())
-    losses.append(-loss.item())
-    return log_likelihoods, losses
-
-
 if __name__ == "__main__":
 
     if args.stage == 'initialize_output':
@@ -207,77 +171,29 @@ if __name__ == "__main__":
         learn_initial_maps()
         sys.exit()
 
-    total_time = 0
-    log_likelihoods = []
-    losses = []
-    log_likelihoods_train = []
-    losses_train = []
-    log_likelihoods_test = []
-    losses_test = []
-    start_time = time.time()  # Record the start time of the epoch
-    for epoch in range(start_epoch, start_epoch + args.num_epochs):
-        log_likelihoods, losses, smoothness_budget_constrained = train(log_likelihoods, losses)
-        log_likelihoods_train, losses_train = evaluate(X_train, log_likelihoods_train, losses_train)
-        log_likelihoods_test, losses_test = evaluate(X_test, log_likelihoods_test, losses_test)
-        if epoch % args.log_interval == 0 or epoch == start_epoch + args.num_epochs - 1:
-            end_time = time.time()  # Record the end time of the epoch
-            elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
-            total_time += elapsed_time  # Calculate the total time for training
-            cur_log_likelihood_train = log_likelihoods_train[-1]
-            cur_loss_train = losses_train[-1]
-            cur_log_likelihood_test = log_likelihoods_test[-1]
-            cur_loss_test = losses_test[-1]
-            smoothness_budget_constrained = smoothness_budget_constrained.detach().numpy()
-            output_str = (f"Epoch: {epoch:2d}, Elapsed Time: {elapsed_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs,\n"
-                          f"Loss train: {cur_loss_train:.5f}, Log Likelihood train: {cur_log_likelihood_train:.5f},\n"
-                          f"Loss test: {cur_loss_test:.5f}, Log Likelihood test: {cur_log_likelihood_test:.5f},\n"
-                          f"lr: {lr:.5f}, smoothness_budget: {smoothness_budget_constrained.T}\n")
-            plot_outputs(model, X_train, data_train.intensity, stim_time, Bspline_matrix, output_dir, 'Train', epoch)
-            plot_outputs(model, X_test, data_test.intensity, stim_time, Bspline_matrix, output_dir, 'Test', epoch)
-            write_log_and_model(model, loss_function, output_str, output_dir, epoch)
-            is_empty = start_epoch==0 and epoch==0
-            write_losses(log_likelihoods_train, 'Train', 'Likelihood', output_dir, is_empty)
-            write_losses(losses_train, 'Train', 'Loss', output_dir, is_empty)
-            write_losses(log_likelihoods_test, 'Test', 'Likelihood', output_dir, is_empty)
-            write_losses(losses_test, 'Test', 'Loss', output_dir, is_empty)
-            write_losses(log_likelihoods, 'Batch', 'Likelihood', output_dir, is_empty)
-            write_losses(losses, 'Batch', 'Loss', output_dir, is_empty)
-            plot_losses(data_train.likelihood(), output_dir, 'Train', 'Likelihood', 20)
-            plot_losses(0, output_dir, 'Train', 'Loss', 20)
-            plot_losses(data_test.likelihood(), output_dir, 'Test', 'Likelihood', 20)
-            plot_losses(0, output_dir, 'Test', 'Loss', 20)
-            plot_losses(data_train.likelihood(), output_dir, 'Batch', 'Likelihood', 100)
-            plot_losses(0, output_dir, 'Batch', 'Loss', 100)
-            # if cur_log_likelihood_test > max(log_likelihoods_test[-6:-1]):
-            #     lr /= 10
-            #     for param_group in optimizer.param_groups:
-            #         param_group['lr'] = lr
-            log_likelihoods = []
-            losses = []
-            log_likelihoods_test = []
-            losses_test = []
-            start_time = time.time()  # Record the start time of the epoch
-            print(output_str)
+    if args.stage == 'finetune':
+        finetune_maps()
+        sys.exit()
+
         # if epoch > args.log_interval and len(log_likelihoods_test) > 5 and log_likelihoods_test[-1] > max(log_likelihoods_test[-6:-1]):
         #     lr /= 10
         #     for param_group in optimizer.param_groups:
         #         param_group['lr'] = lr
-
-            # # Plot activations
-            # act = model.activations['conv1'].squeeze()
-            # plt.figure(figsize=(15, 5))
-            # for i in range(act.size(0)):  # Iterate over all features/neurons
-            #     plt.plot(act[i].cpu().numpy(), label=f'Feature {i}')
-            # plt.title('Feature Activations Over Sequence')
-            # plt.xlabel('Sequence Position')
-            # plt.ylabel('Activation')
-            # plt.legend()
-            # plt.show()
-            #
-            # # Using seaborn for heatmap
-            # plt.figure(figsize=(10, 5))
-            # sns.heatmap(act.cpu().numpy(), cmap='viridis')
-            # plt.title('Activation Heatmap')
-            # plt.xlabel('Sequence Position')
-            # plt.ylabel('Feature/Neuron')
-            # plt.show()
+        # # Plot activations
+        # act = model.activations['conv1'].squeeze()
+        # plt.figure(figsize=(15, 5))
+        # for i in range(act.size(0)):  # Iterate over all features/neurons
+        #     plt.plot(act[i].cpu().numpy(), label=f'Feature {i}')
+        # plt.title('Feature Activations Over Sequence')
+        # plt.xlabel('Sequence Position')
+        # plt.ylabel('Activation')
+        # plt.legend()
+        # plt.show()
+        #
+        # # Using seaborn for heatmap
+        # plt.figure(figsize=(10, 5))
+        # sns.heatmap(act.cpu().numpy(), cmap='viridis')
+        # plt.title('Activation Heatmap')
+        # plt.xlabel('Sequence Position')
+        # plt.ylabel('Feature/Neuron')
+        # plt.show()
