@@ -5,7 +5,7 @@ import seaborn as sns
 import torch
 from matplotlib.figure import figaspect
 import json
-import re
+import ijson
 
 
 def create_precision_matrix(P):
@@ -98,18 +98,72 @@ def plot_bsplines(B, time, output_dir):
     plt.savefig(os.path.join(output_dir, 'groundTruth_bsplines.png'))
 
 
-def plot_outputs(model, binned, true_intensity, stim_time, Bspline_matrix, output_dir, name, epoch, batch=10):
+def load_model_checkpoint(output_dir, epoch):
+    if os.path.exists(os.path.join(output_dir, 'models', f'model_{epoch}.pth')):
+        model = torch.load(os.path.join(output_dir, 'models', f'model_{epoch}.pth'))
+    else:
+        print(f'No model_{epoch}.pth file found in {output_dir}')
+        model = None
+    if os.path.exists(os.path.join(output_dir, 'models', f'model_{epoch}.pth')):
+        loss_function = torch.load(os.path.join(output_dir, 'models', f'loss_{epoch}.pth'))
+    else:
+        print(f'No loss_{epoch}.pth file found in {output_dir}')
+        loss_function = None
+    start_epoch = 0
+    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'rb') as file:
+        for _ in ijson.items(file, 'item'):
+            start_epoch += 1
+    return model, loss_function, start_epoch
 
-    output_dir = os.path.join(output_dir, name)
+
+def create_relevant_files(output_dir, args, data_seed):
+    with open(os.path.join(output_dir, 'log.txt'), 'w'):
+        pass
+
+    with open(os.path.join(output_dir, 'log_likelihoods_batch.json'), 'w+b') as file:
+        file.write(b'[]')
+
+    with open(os.path.join(output_dir, 'losses_batch.json'), 'w+b') as file:
+        file.write(b'[]')
+
+    with open(os.path.join(output_dir, 'log_likelihoods_train.json'), 'w+b') as file:
+        file.write(b'[]')
+
+    with open(os.path.join(output_dir, 'losses_train.json'), 'w+b') as file:
+        file.write(b'[]')
+
+    with open(os.path.join(output_dir, 'log_likelihoods_test.json'), 'w+b') as file:
+        file.write(b'[]')
+
+    with open(os.path.join(output_dir, 'losses_test.json'), 'w+b') as file:
+        file.write(b'[]')
+
+    command_str = (f"python src/psplines_gradient_method/main.py "
+                   f"--K {args.K} --R {args.R} --L {args.L} --intensity_mltply {args.intensity_mltply} "
+                   f"--intensity_bias {args.intensity_bias} --tau_beta {args.tau_beta} --tau_s {args.tau_s} "
+                   f"--num_epochs {args.num_epochs} --notes {args.notes} "
+                   f"--data_seed {data_seed} --param_seed {args.param_seed} --load_and_train 1")
+    with open(os.path.join(output_dir, 'command.txt'), 'w') as file:
+        file.write(command_str)
+
+
+def write_log_and_model(output_str, output_dir, epoch, model=None, loss_function=None):
+    with open(os.path.join(output_dir, 'log.txt'), 'a') as file:
+        file.write(output_str)
+    models_path = os.path.join(output_dir, 'models')
+    if not os.path.exists(models_path):
+        os.makedirs(models_path)
+    if model is not None:
+        torch.save(model, os.path.join(models_path, f'model_{epoch}.pth'))
+    if loss_function is not None:
+        torch.save(loss_function, os.path.join(models_path, f'loss_{epoch}.pth'))
+
+
+def plot_outputs(latent_factors, cluster_attn, firing_attn, true_intensity, stim_time, output_dir, folder, epoch, batch=10):
+
+    output_dir = os.path.join(output_dir, folder)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    model.eval()
-    with torch.no_grad():
-        binned = torch.stack(binned)
-        latent_coeffs, cluster_attn, firing_attn = model(binned)
-        latent_factors = torch.matmul(latent_coeffs, Bspline_matrix).numpy()
-        cluster_attn = cluster_attn.numpy()
-        firing_attn = firing_attn.numpy()
 
     plt.figure(figsize=(10,10))
     sns.heatmap(cluster_attn, annot=True, fmt=".2f", annot_kws={"color": "blue"})
@@ -164,43 +218,7 @@ def plot_outputs(model, binned, true_intensity, stim_time, Bspline_matrix, outpu
         plt.savefig(os.path.join(output_dir, f'main_LambdaIntensities_Trial_batch{i}.png'))
 
 
-def plot_likelihoods(true_likelihood, output_dir, name, metric, cutoff):
-    if 'likelihood' in metric.lower():
-        file_name = 'log_likelihoods'
-    else:
-        file_name = 'losses'
-    file_name = f'{file_name}_{name.lower()}.json'
-    if name.lower()=='test':
-        folder = 'Test'
-    else:
-        folder = 'Train'
-    json_path = os.path.join(output_dir, file_name)
-    with open(json_path, 'r') as file:
-        metric_data = json.load(file)
-    metric_data = metric_data[cutoff:]
-    plt.figure(figsize=(10, 6))
-    plt.plot(metric_data, label=metric)
-    if 'likelihood' in metric.lower():
-        true_likelihood_vector = [true_likelihood] * len(metric_data)
-        plt.plot(true_likelihood_vector, label='True Log Likelihood')
-    plt.xlabel('Iterations')
-    plt.ylabel(metric)
-    plt.title('Plot of metric values')
-    plt.legend()
-    plt.savefig(os.path.join(output_dir, folder, f'{metric}_{name}_Trajectories.png'))
-
-
-def write_log_and_model(model,loss_function, output_str, output_dir, epoch):
-    with open(os.path.join(output_dir, 'log.txt'), 'a') as file:
-        file.write(output_str)
-    models_path = os.path.join(output_dir, 'models')
-    if not os.path.exists(models_path):
-        os.makedirs(models_path)
-    torch.save(model, os.path.join(models_path, f'model_{epoch}.pth'))
-    torch.save(loss_function, os.path.join(models_path, f'loss_{epoch}.pth'))
-
-
-def write_outputs(list, name, metric, output_dir, starts_out_empty):
+def write_losses(list, name, metric, output_dir, starts_out_empty):
     if 'likelihood' in metric.lower():
         file_name = 'log_likelihoods'
     else:
@@ -219,6 +237,35 @@ def write_outputs(list, name, metric, output_dir, starts_out_empty):
                 _ = file.write(json.dumps(item).encode('utf-8'))
                 currently_empty = 0
         _ = file.write(b']')
+
+
+def plot_losses(true_likelihood, output_dir, name, metric, cutoff):
+    if 'likelihood' in metric.lower():
+        file_name = 'log_likelihoods'
+    else:
+        file_name = 'losses'
+    file_name = f'{file_name}_{name.lower()}.json'
+    if name.lower()=='test':
+        folder = 'Test'
+    else:
+        folder = 'Train'
+    plt_path = os.path.join(output_dir, folder)
+    if not os.path.exists(plt_path):
+        os.makedirs(plt_path)
+    json_path = os.path.join(output_dir, file_name)
+    with open(json_path, 'r') as file:
+        metric_data = json.load(file)
+    metric_data = metric_data[cutoff:]
+    plt.figure(figsize=(10, 6))
+    plt.plot(metric_data, label=metric)
+    if 'likelihood' in metric.lower():
+        true_likelihood_vector = [true_likelihood] * len(metric_data)
+        plt.plot(true_likelihood_vector, label='True Log Likelihood')
+    plt.xlabel('Iterations')
+    plt.ylabel(metric)
+    plt.title('Plot of metric values')
+    plt.legend()
+    plt.savefig(os.path.join(plt_path, f'{metric}_{name}_Trajectories.png'))
 
 
 def int_or_str(value):

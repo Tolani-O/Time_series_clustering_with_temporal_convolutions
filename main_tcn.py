@@ -9,17 +9,13 @@ from torch.utils.data import DataLoader
 from src.TCN.tcn import TemporalConvNet, CustomDataset, NegLogLikelihood
 from src.simulate_data import DataAnalyzer
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from src.TCN.general_functions import int_or_str, create_second_diff_matrix, plot_outputs, write_outputs, plot_spikes, \
-    plot_intensity_and_latents, plot_latent_coupling, plot_likelihoods, write_log_and_model
-from torch.utils.tensorboard import SummaryWriter
+from src.TCN.general_functions import int_or_str, create_second_diff_matrix, plot_outputs, write_losses, plot_spikes, \
+    plot_intensity_and_latents, plot_latent_coupling, plot_losses, write_log_and_model, create_relevant_files, \
+    load_model_checkpoint
+from src.TCN.main_learn_initial_outputs import learn_initial_outputs
+from src.TCN.main_learn_initial_maps import learn_initial_maps
 from scipy.interpolate import BSpline
-import torch.nn.functional as F
 import time
-import ijson
-import pickle
-
 
 parser = argparse.ArgumentParser(description='Sequence Modeling - Polyphonic Music')
 parser.add_argument('--cuda', action='store_false', default=False, help='use CUDA (default: False)')
@@ -46,6 +42,7 @@ parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
 parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
 parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
 parser.add_argument('--param_seed', type=int_or_str, default='TRUTH', help='')
+parser.add_argument('--stage', type=str, default='finetune', help='options are: initialize_output, initialize_map, finetune')
 
 args = parser.parse_args()
 
@@ -56,18 +53,18 @@ if args.param_seed == '':
     args.param_seed = np.random.randint(0, 2 ** 32 - 1)
 data_seed = np.random.randint(0, 2 ** 32 - 1)
 
-if args.plot_lkhd:
-    np.random.seed(data_seed)
-    true_data = DataAnalyzer().initialize(K=args.K, R=args.R, intensity_mltply=args.intensity_mltply, intensity_bias=args.intensity_bias,
-                                          max_offset=0)
-    # plot_likelihoods(true_data, args.K, args.R, args.L, args.intensity_mltply, args.intensity_bias, data_seed)
-    sys.exit()
+# if args.plot_lkhd:
+#     np.random.seed(data_seed)
+#     true_data = DataAnalyzer().initialize(K=args.K, R=args.R, intensity_mltply=args.intensity_mltply, intensity_bias=args.intensity_bias,
+#                                           max_offset=0)
+#     plot_losses(true_data, args.K, args.R, args.L, args.intensity_mltply, args.intensity_bias, data_seed)
+#     sys.exit()
 
 folder_name = (f'paramSeed{args.param_seed}_dataSeed{data_seed}_L{args.L}_K{args.K}_R{args.R}'
                f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
                f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
 print(f'folder_name: {folder_name}')
-output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
+output_dir = os.path.join(os.getcwd(), 'outputs', folder_name, args.stage)
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
@@ -120,55 +117,20 @@ X_test = [torch.Tensor(X_test_array[i].astype(np.float64)) for i in range(dims[0
 
 start_epoch = 0
 if args.load_only or args.load_and_train:
-    with open(os.path.join(output_dir, 'model.pkl'), 'rb') as model_file:
-        model = pickle.load(model_file)
-    with open(os.path.join(output_dir, 'loss.pkl'), 'rb') as loss_file:
-        loss_function = pickle.load(loss_file)
-    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'rb') as file:
-        for item in ijson.items(file, 'item'):
-            start_epoch += 1
+    model, loss_function, start_epoch = load_model_checkpoint(output_dir, args.num_epochs)
 
 if args.load_only:
-    sys.exit()
+        sys.exit()
 
 if not args.load_and_train:
-
-    with open(os.path.join(output_dir, 'log.txt'), 'w'):
-        pass
-
-    with open(os.path.join(output_dir, 'log_likelihoods_batch.json'), 'w+b') as file:
-        file.write(b'[]')
-
-    with open(os.path.join(output_dir, 'losses_batch.json'), 'w+b') as file:
-        file.write(b'[]')
-
-    with open(os.path.join(output_dir, 'log_likelihoods_train.json'), 'w+b') as file:
-        file.write(b'[]')
-
-    with open(os.path.join(output_dir, 'losses_train.json'), 'w+b') as file:
-        file.write(b'[]')
-
-    with open(os.path.join(output_dir, 'log_likelihoods_test.json'), 'w+b') as file:
-        file.write(b'[]')
-
-    with open(os.path.join(output_dir, 'losses_test.json'), 'w+b') as file:
-        file.write(b'[]')
-
-    command_str = (f"python src/psplines_gradient_method/main.py "
-                   f"--K {args.K} --R {args.R} --L {args.L} --intensity_mltply {args.intensity_mltply} "
-                   f"--intensity_bias {args.intensity_bias} --tau_beta {args.tau_beta} --tau_s {args.tau_s} "
-                   f"--num_epochs {args.num_epochs} --notes {args.notes} "
-                   f"--data_seed {data_seed} --param_seed {args.param_seed} --load_and_train 1")
-    with open(os.path.join(output_dir, 'command.txt'), 'w') as file:
-        file.write(command_str)
-
+    create_relevant_files(output_dir, args, data_seed)
     if isinstance(args.param_seed, int):
         torch.manual_seed(args.param_seed)
     model = TemporalConvNet(state_size, input_size, output_size, n_channels, output_size, bin_kernel_size,
                             kernel_size, args.dropout)
     # Attach hooks
     # model.register_hooks()
-    loss_function = NegLogLikelihood(state_size[0], Bspline_matrix, Delta2TDelta2, dt, tau_beta, tau_s)
+    loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt, tau_beta, tau_s)
     if args.param_seed == 'TRUTH':
         model.init_ground_truth(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
 
@@ -198,8 +160,10 @@ loss_optimizer = getattr(optim, args.optim)(loss_function.parameters(), lr=lr)
 # loss_writer.close()
 # print('DONE')
 
+
 def train(log_likelihoods, losses):
     model.train()
+    loss_function.train()
     for binned in dataloader:
         if args.cuda: binned = binned.cuda()
         # Zero out the gradients for both optimizers
@@ -222,6 +186,7 @@ def train(log_likelihoods, losses):
 
 def evaluate(data, log_likelihoods, losses):
     model.eval()
+    loss_function.eval()
     with torch.no_grad():
         data = torch.stack(data)
         if args.cuda: data = data.cuda()
@@ -233,6 +198,15 @@ def evaluate(data, log_likelihoods, losses):
 
 
 if __name__ == "__main__":
+
+    if args.stage == 'initialize_output':
+        learn_initial_outputs()
+        sys.exit()
+
+    if args.stage == 'initialize_map':
+        learn_initial_maps()
+        sys.exit()
+
     total_time = 0
     log_likelihoods = []
     losses = []
@@ -262,18 +236,18 @@ if __name__ == "__main__":
             plot_outputs(model, X_test, data_test.intensity, stim_time, Bspline_matrix, output_dir, 'Test', epoch)
             write_log_and_model(model, loss_function, output_str, output_dir, epoch)
             is_empty = start_epoch==0 and epoch==0
-            write_outputs(log_likelihoods_train, 'Train', 'Likelihood', output_dir, is_empty)
-            write_outputs(losses_train, 'Train', 'Loss', output_dir, is_empty)
-            write_outputs(log_likelihoods_test, 'Test', 'Likelihood', output_dir, is_empty)
-            write_outputs(losses_test, 'Test', 'Loss', output_dir, is_empty)
-            write_outputs(log_likelihoods, 'Batch', 'Likelihood', output_dir, is_empty)
-            write_outputs(losses, 'Batch', 'Loss', output_dir, is_empty)
-            plot_likelihoods(data_train.likelihood(), output_dir, 'Train', 'Likelihood', 20)
-            plot_likelihoods(0, output_dir, 'Train', 'Loss', 20)
-            plot_likelihoods(data_test.likelihood(), output_dir, 'Test', 'Likelihood', 20)
-            plot_likelihoods(0, output_dir, 'Test', 'Loss', 20)
-            plot_likelihoods(data_train.likelihood(), output_dir, 'Batch', 'Likelihood', 100)
-            plot_likelihoods(0, output_dir, 'Batch', 'Loss', 100)
+            write_losses(log_likelihoods_train, 'Train', 'Likelihood', output_dir, is_empty)
+            write_losses(losses_train, 'Train', 'Loss', output_dir, is_empty)
+            write_losses(log_likelihoods_test, 'Test', 'Likelihood', output_dir, is_empty)
+            write_losses(losses_test, 'Test', 'Loss', output_dir, is_empty)
+            write_losses(log_likelihoods, 'Batch', 'Likelihood', output_dir, is_empty)
+            write_losses(losses, 'Batch', 'Loss', output_dir, is_empty)
+            plot_losses(data_train.likelihood(), output_dir, 'Train', 'Likelihood', 20)
+            plot_losses(0, output_dir, 'Train', 'Loss', 20)
+            plot_losses(data_test.likelihood(), output_dir, 'Test', 'Likelihood', 20)
+            plot_losses(0, output_dir, 'Test', 'Loss', 20)
+            plot_losses(data_train.likelihood(), output_dir, 'Batch', 'Likelihood', 100)
+            plot_losses(0, output_dir, 'Batch', 'Loss', 100)
             # if cur_log_likelihood_test > max(log_likelihoods_test[-6:-1]):
             #     lr /= 10
             #     for param_group in optimizer.param_groups:
