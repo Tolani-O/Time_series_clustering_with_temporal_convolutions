@@ -1,8 +1,24 @@
 import time
 import torch
+import torch.nn.functional as F
 from src.TCN.general_functions import write_log_and_model, plot_outputs, write_losses, plot_losses
 
-global model, loss_function, model_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+
+def define_global_vars(global_vars):
+    global model, loss_function, model_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+    model = global_vars['model']
+    loss_function = global_vars['loss_function']
+    model_optimizer = global_vars['model_optimizer']
+    data_train = global_vars['data_train']
+    data_test = global_vars['data_test']
+    X_train = global_vars['X_train']
+    X_test = global_vars['X_test']
+    stim_time = global_vars['stim_time']
+    args = global_vars['args']
+    output_dir = global_vars['output_dir']
+    start_epoch = global_vars['start_epoch']
+    lr = global_vars['lr']
+    Bspline_matrix = global_vars['Bspline_matrix']
 
 
 def initialization_training_epoch(losses):
@@ -10,7 +26,7 @@ def initialization_training_epoch(losses):
     model_optimizer.zero_grad()
     data = torch.stack(X_train)
     latent_coeffs, cluster_attn, firing_attn = model(data)
-    loss, latent_factors = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, mode='initialize_map')
+    loss = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, mode='initialize_map')
     losses.append(-loss.item())
     if args.clip > 0:
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -18,7 +34,7 @@ def initialization_training_epoch(losses):
     loss.backward()
     # Update the parameters for both the model and the loss_function
     model_optimizer.step()
-    return losses, latent_factors, cluster_attn, firing_attn
+    return losses, cluster_attn, firing_attn
 
 
 def initialization_evaluation(losses):
@@ -27,19 +43,20 @@ def initialization_evaluation(losses):
         data = torch.stack(X_test)
         if args.cuda: data = data.cuda()
         latent_coeffs, cluster_attn, firing_attn = model(data)
-        loss, latent_factors = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, mode='initialize_map')
+        loss = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, mode='initialize_map')
     losses.append(-loss.item())
-    return losses, latent_factors, cluster_attn, firing_attn
+    return losses, cluster_attn, firing_attn
 
 
-def learn_initial_maps():
+def learn_initial_maps(global_vars):
+    define_global_vars(global_vars)
     total_time = 0
     losses_train = []
     losses_test = []
     start_time = time.time()  # Record the start time of the epoch
     for epoch in range(start_epoch, start_epoch + args.num_epochs):
-        losses_train, latent_factors_train, cluster_attn_train, firing_attn_train = initialization_training_epoch(losses_train)
-        losses_test, latent_factors_test, cluster_attn_test, firing_attn_test = initialization_evaluation(losses_test)
+        losses_train, cluster_attn_train, firing_attn_train = initialization_training_epoch(losses_train)
+        losses_test, cluster_attn_test, firing_attn_test = initialization_evaluation(losses_test)
         if epoch % args.log_interval == 0 or epoch == start_epoch + args.num_epochs - 1:
             end_time = time.time()  # Record the end time of the epoch
             elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
@@ -50,11 +67,11 @@ def learn_initial_maps():
                 f"Epoch: {epoch:2d}, Elapsed Time: {elapsed_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs,\n"
                 f"Loss train: {cur_loss_train:.5f}, Loss test: {cur_loss_test:.5f}, lr: {lr:.5f}\n")
             write_log_and_model(output_str, output_dir, epoch, model=model)
-            latent_factors = latent_factors_train.detach().numpy()
+            latent_coeffs = F.softplus(loss_function.state.detach())
+            latent_factors = torch.matmul(latent_coeffs, Bspline_matrix).numpy()
             cluster_attn = cluster_attn_train.detach().numpy()
             firing_attn = firing_attn_train.detach().numpy()
             plot_outputs(latent_factors, cluster_attn, firing_attn, data_train.intensity, stim_time, output_dir, 'Train', epoch)
-            latent_factors = latent_factors_test.detach().numpy()
             cluster_attn = cluster_attn_test.detach().numpy()
             firing_attn = firing_attn_test.detach().numpy()
             plot_outputs(latent_factors, cluster_attn, firing_attn, data_train.intensity, stim_time, output_dir, 'Test', epoch)

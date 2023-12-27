@@ -60,15 +60,13 @@ class EmbeddingConvolutionBlock(nn.Module):
 
 
 class NegLogLikelihood(nn.Module):
-    def __init__(self, state_size, batch_size, Bspline_matrix, Delta2TDelta2, del_t, tau_beta, tau_s):
+    def __init__(self, state_size, batch_size, Bspline_matrix, Delta2TDelta2, del_t):
         super(NegLogLikelihood, self).__init__()
         # Initialize any parameters here
         self.smoothness_budget = nn.Parameter(torch.zeros((state_size[0],1)))
         self.Bspline_matrix = Bspline_matrix
         self.Delta2TDelta2 = Delta2TDelta2
         self.del_t = del_t
-        self.tau_beta = tau_beta
-        self.tau_s = tau_s
         # Initialize the TCN Network's transformed parameters
         self.state = nn.Parameter(torch.cat((torch.zeros(1, state_size[1]), torch.randn(state_size[0] - 1, state_size[1])), dim=0))
         self.cluster_attn = nn.Parameter(torch.randn(batch_size, state_size[0]))
@@ -85,31 +83,33 @@ class NegLogLikelihood(nn.Module):
         negLogLikelihood = -torch.sum(torch.log(intensity_functions_repeated) * spike_trains - intensity_functions * self.del_t)
         return negLogLikelihood, latent_factors
 
-    def penalty_term(self, latent_factors):
+    def penalty_term(self, latent_factors, tau_beta, tau_s):
         smoothness_budget_constrained = F.softmax(self.smoothness_budget, dim=-1)
-        beta_s2_penalty = self.tau_beta * (smoothness_budget_constrained.T @ torch.sum((latent_factors @ self.Delta2TDelta2) * latent_factors, axis=1)).squeeze()
+        beta_s2_penalty = tau_beta * (smoothness_budget_constrained.T @ torch.sum((latent_factors @ self.Delta2TDelta2) * latent_factors, axis=1)).squeeze()
         smoothness_budget_norm = (self.smoothness_budget.T @ self.smoothness_budget).squeeze()
-        smoothness_budget_penalty = self.tau_s * smoothness_budget_norm
+        smoothness_budget_penalty = tau_s * smoothness_budget_norm
         penalty = beta_s2_penalty + smoothness_budget_penalty
         return penalty, smoothness_budget_constrained
 
-    def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, mode=''):
+    def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, tau_beta=1, tau_s=1, mode=''):
+        tau_beta = torch.tensor(tau_beta)
+        tau_s = torch.tensor(tau_s)
         if mode=='initialize_output':
             latent_coeffs = F.softplus(self.state)
             cluster_attn = F.softmax(self.cluster_attn, dim=-1)
             firing_attn = F.softplus(self.firing_attn)
             negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, latent_coeffs, cluster_attn, firing_attn)
-            return negLogLikelihood, latent_factors, cluster_attn, firing_attn
+            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors, tau_beta, tau_s)
+            loss = negLogLikelihood + penalty
+            return loss, negLogLikelihood, latent_factors, cluster_attn, firing_attn, smoothness_budget_constrained
         elif mode=='initialize_map':
-            latent_coeffs = F.softplus(self.state)
-            latent_factors = torch.matmul(latent_coeffs, self.Bspline_matrix)
             cluster_loss = self.mse_loss(self.cluster_attn, cluster_attn)
             firing_loss = self.mse_loss(self.firing_attn, firing_attn)
             loss = cluster_loss + firing_loss
-            return loss, latent_factors
+            return loss
         else:
             negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, latent_coeffs, cluster_attn, firing_attn)
-            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors)
+            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors, tau_beta, tau_s)
             loss = negLogLikelihood + penalty
             return loss, negLogLikelihood, latent_factors, smoothness_budget_constrained
 

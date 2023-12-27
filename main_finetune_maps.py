@@ -2,8 +2,27 @@ import time
 import torch
 from src.TCN.general_functions import plot_outputs, write_log_and_model, write_losses, plot_losses
 
+
 global model, loss_function, model_optimizer, loss_optimizer, dataloader, data_train, data_test, X_train, X_test, \
     stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+def define_global_vars(global_vars):
+    global model, loss_function, model_optimizer, loss_optimizer, dataloader, data_train, data_test, X_train, X_test, \
+        stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+    model = global_vars['model']
+    loss_function = global_vars['loss_function']
+    model_optimizer = global_vars['model_optimizer']
+    loss_optimizer = global_vars['loss_optimizer']
+    dataloader = global_vars['dataloader']
+    data_train = global_vars['data_train']
+    data_test = global_vars['data_test']
+    X_train = global_vars['X_train']
+    X_test = global_vars['X_test']
+    stim_time = global_vars['stim_time']
+    args = global_vars['args']
+    output_dir = global_vars['output_dir']
+    start_epoch = global_vars['start_epoch']
+    lr = global_vars['lr']
+    Bspline_matrix = global_vars['Bspline_matrix']
 
 
 def initialization_training_epoch(log_likelihoods, losses):
@@ -15,7 +34,8 @@ def initialization_training_epoch(log_likelihoods, losses):
         model_optimizer.zero_grad()
         loss_optimizer.zero_grad()
         latent_coeffs, cluster_attn, firing_attn = model(binned)
-        loss, negLogLikelihood, latent_factors, smoothness_budget_constrained = loss_function(binned, latent_coeffs, cluster_attn, firing_attn)
+        loss, negLogLikelihood, latent_factors, smoothness_budget_constrained = (
+            loss_function(binned, latent_coeffs, cluster_attn, firing_attn, args.tau_beta, args.tau_s))
         log_likelihoods.append(-negLogLikelihood.item())
         losses.append(-loss.item())
         if args.clip > 0:
@@ -31,17 +51,19 @@ def initialization_training_epoch(log_likelihoods, losses):
 def initialization_evaluation(data, log_likelihoods, losses):
     model.eval()
     loss_function.eval()
-    with torch.no_grad():
+    with (torch.no_grad()):
         data = torch.stack(data)
         if args.cuda: data = data.cuda()
         latent_coeffs, cluster_attn, firing_attn = model(data)
-        loss, negLogLikelihood, latent_factors, smoothness_budget_constrained = loss_function(data, latent_coeffs, cluster_attn, firing_attn)
+        loss, negLogLikelihood, latent_factors, smoothness_budget_constrained = (
+            loss_function(data, latent_coeffs, cluster_attn, firing_attn, args.tau_beta, args.tau_s))
     log_likelihoods.append(-negLogLikelihood.item())
     losses.append(-loss.item())
     return log_likelihoods, losses, latent_factors, cluster_attn, firing_attn
 
 
-def finetune_maps():
+def finetune_maps(global_vars):
+    define_global_vars(global_vars)
     total_time = 0
     log_likelihoods = []
     losses = []

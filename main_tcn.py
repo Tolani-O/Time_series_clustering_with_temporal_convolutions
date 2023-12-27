@@ -46,8 +46,11 @@ parser.add_argument('--stage', type=str, default='finetune', help='options are: 
 
 args = parser.parse_args()
 
+args.stage = 'initialize_output'
+args.num_epochs = 25000
 args.notes = 'Random_States'
 args.param_seed = ''
+args.lr = 1e-3
 
 if args.param_seed == '':
     args.param_seed = np.random.randint(0, 2 ** 32 - 1)
@@ -99,8 +102,6 @@ Bspline_matrix = torch.tensor(BSpline.design_matrix(stim_time, knots, degree).tr
 state_size = (args.L, Bspline_matrix.shape[0])
 Delta2 = create_second_diff_matrix(stim_time.shape[0])
 Delta2TDelta2 = torch.tensor(Delta2.T @ Delta2).float()
-tau_beta = torch.tensor(args.tau_beta)
-tau_s = torch.tensor(args.tau_s)
 
 # Instantiate the dataset and dataloader
 dataset = CustomDataset(X_train)
@@ -130,7 +131,7 @@ if not args.load_and_train:
                             kernel_size, args.dropout)
     # Attach hooks
     # model.register_hooks()
-    loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt, tau_beta, tau_s)
+    loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
     if args.param_seed == 'TRUTH':
         model.init_ground_truth(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
 
@@ -138,9 +139,8 @@ if args.cuda:
     model.cuda()
     loss_function.cuda()
 
-lr = 1e-4 #args.lr
-model_optimizer = getattr(optim, args.optim)(model.parameters(), lr=lr)
-loss_optimizer = getattr(optim, args.optim)(loss_function.parameters(), lr=lr)
+model_optimizer = getattr(optim, args.optim)(model.parameters(), lr=args.lr)
+loss_optimizer = getattr(optim, args.optim)(loss_function.parameters(), lr=args.lr)
 
 # # Visualize networks
 # cluster_attn = F.softmax(torch.randn(1, state_size[0]), dim=-1)
@@ -160,19 +160,18 @@ loss_optimizer = getattr(optim, args.optim)(loss_function.parameters(), lr=lr)
 # loss_writer.close()
 # print('DONE')
 
-
 if __name__ == "__main__":
 
     if args.stage == 'initialize_output':
-        learn_initial_outputs()
+        learn_initial_outputs(globals())
         sys.exit()
 
     if args.stage == 'initialize_map':
-        learn_initial_maps()
+        learn_initial_maps(globals())
         sys.exit()
 
     if args.stage == 'finetune':
-        finetune_maps()
+        finetune_maps(globals())
         sys.exit()
 
         # if epoch > args.log_interval and len(log_likelihoods_test) > 5 and log_likelihoods_test[-1] > max(log_likelihoods_test[-6:-1]):
