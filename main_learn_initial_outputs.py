@@ -4,7 +4,7 @@ from src.TCN.general_functions import write_log_and_model, plot_outputs, write_l
 
 
 def define_global_vars(global_vars):
-    global loss_function, loss_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+    global loss_function, loss_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, Bspline_matrix
     loss_function = global_vars['loss_function']
     loss_optimizer = global_vars['loss_optimizer']
     data_train = global_vars['data_train']
@@ -15,7 +15,6 @@ def define_global_vars(global_vars):
     args = global_vars['args']
     output_dir = global_vars['output_dir']
     start_epoch = global_vars['start_epoch']
-    lr = global_vars['lr']
     Bspline_matrix = global_vars['Bspline_matrix']
 
 
@@ -30,7 +29,7 @@ def initialization_training_epoch(log_likelihoods, losses):
     if args.clip > 0:
         torch.nn.utils.clip_grad_norm_(loss_function.parameters(), args.clip)
     # Backpropagate the loss through both the model and the loss_function
-    negLogLikelihood.backward()
+    loss.backward()
     # Update the parameters for both the model and the loss_function
     loss_optimizer.step()
     return log_likelihoods, losses, latent_factors, cluster_attn, firing_attn, smoothness_budget_constrained
@@ -52,10 +51,11 @@ def learn_initial_outputs(global_vars):
             total_time += elapsed_time  # Calculate the total time for training
             cur_log_likelihood_train = log_likelihoods_train[-1]
             cur_loss_train = losses_train[-1]
+            smoothness_budget_constrained = smoothness_budget_constrained.detach().numpy()
             output_str = (
                 f"Epoch: {epoch:2d}, Elapsed Time: {elapsed_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs,\n"
                 f"Loss train: {cur_loss_train:.5f}, Log Likelihood train: {cur_log_likelihood_train:.5f},\n"
-                f"lr: {lr:.5f}, smoothness_budget: {smoothness_budget_constrained.T}\n")
+                f"lr: {args.lr:.5f}, smoothness_budget: {smoothness_budget_constrained.T}\n")
             write_log_and_model(output_str, output_dir, epoch, loss_function=loss_function)
             latent_factors = latent_factors.detach().numpy()
             cluster_attn = cluster_attn.detach().numpy()

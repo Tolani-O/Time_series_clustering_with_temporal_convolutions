@@ -32,8 +32,8 @@ parser.add_argument('--plot_lkhd', type=int, default=0, help='')
 parser.add_argument('--load_only', type=int, default=0, help='')
 parser.add_argument('--load_and_train', type=int, default=0, help='')
 parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
-parser.add_argument('--tau_beta', type=int, default=1, help='Value for tau_beta')
-parser.add_argument('--tau_s', type=int, default=1, help='Value for tau_s')
+parser.add_argument('--tau_beta', type=int, default=100, help='Value for tau_beta')
+parser.add_argument('--tau_s', type=int, default=10, help='Value for tau_s')
 parser.add_argument('--num_epochs', type=int, default=1500, help='Number of training epochs')
 parser.add_argument('--notes', type=str, default='empty', help='Run notes')
 parser.add_argument('--K', type=int, default=50, help='Number of neurons')
@@ -46,11 +46,13 @@ parser.add_argument('--stage', type=str, default='finetune', help='options are: 
 
 args = parser.parse_args()
 
-args.stage = 'initialize_output'
+args.stage = 'initialize_map'
 args.num_epochs = 25000
 args.notes = 'Random_States'
 args.param_seed = ''
 args.lr = 1e-3
+args.tau_beta = 1000
+args.tau_s = 1
 
 if args.param_seed == '':
     args.param_seed = np.random.randint(0, 2 ** 32 - 1)
@@ -117,6 +119,12 @@ X_test_array = binned.reshape(dims[0], args.R, int(dims[1] / args.R)).transpose(
 X_test = [torch.Tensor(X_test_array[i].astype(np.float64)) for i in range(dims[0])]
 
 start_epoch = 0
+
+# folder_name = 'paramSeed2973639709_dataSeed2580866146_L3_K50_R5_int.mltply25_int.add1_tauBeta100_tauS10_iters25000_notes-Random_States'
+# output_dir = os.path.join(os.getcwd(), 'outputs', folder_name, args.stage)
+# args.load_only = 1
+# args.num_epochs = 25000-1
+
 if args.load_only or args.load_and_train:
     model, loss_function, start_epoch = load_model_checkpoint(output_dir, args.num_epochs)
 

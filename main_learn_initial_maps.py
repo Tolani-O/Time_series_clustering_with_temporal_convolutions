@@ -5,7 +5,7 @@ from src.TCN.general_functions import write_log_and_model, plot_outputs, write_l
 
 
 def define_global_vars(global_vars):
-    global model, loss_function, model_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+    global model, loss_function, model_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, Bspline_matrix
     model = global_vars['model']
     loss_function = global_vars['loss_function']
     model_optimizer = global_vars['model_optimizer']
@@ -17,7 +17,6 @@ def define_global_vars(global_vars):
     args = global_vars['args']
     output_dir = global_vars['output_dir']
     start_epoch = global_vars['start_epoch']
-    lr = global_vars['lr']
     Bspline_matrix = global_vars['Bspline_matrix']
 
 
@@ -65,7 +64,7 @@ def learn_initial_maps(global_vars):
             cur_loss_test = losses_test[-1]
             output_str = (
                 f"Epoch: {epoch:2d}, Elapsed Time: {elapsed_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs,\n"
-                f"Loss train: {cur_loss_train:.5f}, Loss test: {cur_loss_test:.5f}, lr: {lr:.5f}\n")
+                f"Loss train: {cur_loss_train:.5f}, Loss test: {cur_loss_test:.5f}, lr: {args.lr:.5f}\n")
             write_log_and_model(output_str, output_dir, epoch, model=model)
             latent_coeffs = F.softplus(loss_function.state.detach())
             latent_factors = torch.matmul(latent_coeffs, Bspline_matrix).numpy()

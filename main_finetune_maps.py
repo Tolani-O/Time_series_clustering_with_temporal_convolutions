@@ -3,11 +3,9 @@ import torch
 from src.TCN.general_functions import plot_outputs, write_log_and_model, write_losses, plot_losses
 
 
-global model, loss_function, model_optimizer, loss_optimizer, dataloader, data_train, data_test, X_train, X_test, \
-    stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
 def define_global_vars(global_vars):
     global model, loss_function, model_optimizer, loss_optimizer, dataloader, data_train, data_test, X_train, X_test, \
-        stim_time, args, output_dir, start_epoch, lr, Bspline_matrix
+        stim_time, args, output_dir, start_epoch, Bspline_matrix
     model = global_vars['model']
     loss_function = global_vars['loss_function']
     model_optimizer = global_vars['model_optimizer']
@@ -21,7 +19,6 @@ def define_global_vars(global_vars):
     args = global_vars['args']
     output_dir = global_vars['output_dir']
     start_epoch = global_vars['start_epoch']
-    lr = global_vars['lr']
     Bspline_matrix = global_vars['Bspline_matrix']
 
 
@@ -91,7 +88,7 @@ def finetune_maps(global_vars):
                 f"Epoch: {epoch:2d}, Elapsed Time: {elapsed_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs,\n"
                 f"Loss train: {cur_loss_train:.5f}, Log Likelihood train: {cur_log_likelihood_train:.5f},\n"
                 f"Loss test: {cur_loss_test:.5f}, Log Likelihood test: {cur_log_likelihood_test:.5f},\n"
-                f"lr: {lr:.5f}, smoothness_budget: {smoothness_budget_constrained.T}\n")
+                f"lr: {args.lr:.5f}, smoothness_budget: {smoothness_budget_constrained.T}\n")
             write_log_and_model(output_str, output_dir, epoch, model, loss_function)
             latent_factors = latent_factors_train.detach().numpy()
             cluster_attn = cluster_attn_train.detach().numpy()

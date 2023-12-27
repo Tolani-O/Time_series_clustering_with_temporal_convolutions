@@ -36,9 +36,9 @@ class ConvolutionBlock(nn.Module):
         super(ConvolutionBlock, self).__init__()
         self.conv = weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size, stride=stride, padding=padding, dilation=dilation))
         self.chomp = Chomp1d(padding)
-        self.relu = nn.ReLU()
+        self.elu = nn.ELU()
         self.dropout = nn.Dropout(dropout)
-        self.net = nn.Sequential(self.conv, self.chomp, self.relu, self.dropout)
+        self.net = nn.Sequential(self.conv, self.chomp, self.elu, self.dropout)
 
     def forward(self, x):
         return self.net(x)
@@ -51,12 +51,12 @@ class EmbeddingConvolutionBlock(nn.Module):
         conv2 = ConvolutionBlock(n_outputs, n_outputs, kernel_size, stride, dilation, padding, dropout)
         self.convnet = nn.Sequential(conv1, conv2)
         self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
-        self.relu = nn.ReLU()
+        self.elu = nn.ELU()
 
     def forward(self, x):
         out = self.convnet(x)
         res = x if self.downsample is None else self.downsample(x)
-        return self.relu(out + res)
+        return self.elu(out + res)
 
 
 class NegLogLikelihood(nn.Module):
@@ -70,7 +70,7 @@ class NegLogLikelihood(nn.Module):
         # Initialize the TCN Network's transformed parameters
         self.state = nn.Parameter(torch.cat((torch.zeros(1, state_size[1]), torch.randn(state_size[0] - 1, state_size[1])), dim=0))
         self.cluster_attn = nn.Parameter(torch.randn(batch_size, state_size[0]))
-        self.firing_attn = nn.Parameter(torch.randn(batch_size, state_size[0]))
+        self.firing_attn = nn.Parameter(torch.randn(batch_size, 1))
         # Create loss
         self.mse_loss = nn.MSELoss()
 
@@ -84,9 +84,9 @@ class NegLogLikelihood(nn.Module):
         return negLogLikelihood, latent_factors
 
     def penalty_term(self, latent_factors, tau_beta, tau_s):
-        smoothness_budget_constrained = F.softmax(self.smoothness_budget, dim=-1)
-        beta_s2_penalty = tau_beta * (smoothness_budget_constrained.T @ torch.sum((latent_factors @ self.Delta2TDelta2) * latent_factors, axis=1)).squeeze()
-        smoothness_budget_norm = (self.smoothness_budget.T @ self.smoothness_budget).squeeze()
+        smoothness_budget_constrained = F.softmax(self.smoothness_budget, dim=0)
+        beta_s2_penalty = tau_beta * (smoothness_budget_constrained.t() @ torch.sum((latent_factors @ self.Delta2TDelta2) * latent_factors, axis=1)).squeeze()
+        smoothness_budget_norm = (self.smoothness_budget.t() @ self.smoothness_budget).squeeze()
         smoothness_budget_penalty = tau_s * smoothness_budget_norm
         penalty = beta_s2_penalty + smoothness_budget_penalty
         return penalty, smoothness_budget_constrained
