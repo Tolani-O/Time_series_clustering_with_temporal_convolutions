@@ -41,39 +41,44 @@ parser.add_argument('--R', type=int, default=5, help='Number of trials')
 parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
 parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
 parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
-parser.add_argument('--param_seed', type=int_or_str, default='TRUTH', help='')
+parser.add_argument('--param_seed', type=int_or_str, default='Truth', help='options are: seed (int), Truth (str), Learned (str)')
 parser.add_argument('--stage', type=str, default='finetune', help='options are: initialize_output, initialize_map, finetune')
 
 args = parser.parse_args()
 
 args.stage = 'initialize_map'
+folder_name = 'paramSeed192600038_dataSeed4223320140_L3_K50_R5_int.mltply25_int.add1_tauBeta3000_tauS10000_iters25000_notes-initialize_states_heavy_penalty'
 args.num_epochs = 25000
-args.notes = 'Random_States'
-args.param_seed = ''
 args.lr = 1e-3
-args.tau_beta = 1000
-args.tau_s = 1
+args.tau_beta = 3000
+args.tau_s = 10000
+load_epoch = args.num_epochs - 1
+
 
 if args.param_seed == '':
     args.param_seed = np.random.randint(0, 2 ** 32 - 1)
 data_seed = np.random.randint(0, 2 ** 32 - 1)
+sub_folder_name = args.stage
 
-# if args.plot_lkhd:
-#     np.random.seed(data_seed)
-#     true_data = DataAnalyzer().initialize(K=args.K, R=args.R, intensity_mltply=args.intensity_mltply, intensity_bias=args.intensity_bias,
-#                                           max_offset=0)
-#     plot_losses(true_data, args.K, args.R, args.L, args.intensity_mltply, args.intensity_bias, data_seed)
-#     sys.exit()
+if args.stage == 'initialize_map':
+    args.load_and_train = 1
+    args.param_seed = 'learned'
+    sub_folder_name = 'initialize_output'
 
-folder_name = (f'paramSeed{args.param_seed}_dataSeed{data_seed}_L{args.L}_K{args.K}_R{args.R}'
-               f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
-               f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
+start_epoch = 0
+if args.load_only or args.load_and_train:
+    load_dir = os.path.join(os.getcwd(), 'outputs', folder_name, sub_folder_name)
+    model, loss_function, start_epoch = load_model_checkpoint(load_dir, load_epoch)
+else:
+    folder_name = (f'paramSeed{args.param_seed}_dataSeed{data_seed}_L{args.L}_K{args.K}_R{args.R}'
+                   f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
+                   f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
+
+if args.load_only:
+    sys.exit()
+
 print(f'folder_name: {folder_name}')
 output_dir = os.path.join(os.getcwd(), 'outputs', folder_name, args.stage)
-
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
-
 if torch.cuda.is_available():
     if not args.cuda:
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -88,9 +93,6 @@ binned, stim_time = data_train.sample_data()
 dims = binned.shape
 X_train_array = binned.reshape(dims[0], args.R, int(dims[1] / args.R)).transpose(0, 2, 1)
 X_train = [torch.Tensor(X_train_array[i].astype(np.float64)) for i in range(dims[0])]
-plot_spikes(binned, output_dir)
-plot_intensity_and_latents(data_train.time, data_train.latent_factors, data_train.intensity, output_dir)
-plot_latent_coupling(data_train.latent_coupling, output_dir)
 degree = 3
 n_channels = [args.nhid] * args.levels
 kernel_size = args.ksize
@@ -113,26 +115,18 @@ data_test = DataAnalyzer().initialize(K=args.K, R=args.R, intensity_mltply=args.
                                      intensity_bias=args.intensity_bias, max_offset=0)
 true_likelihood_test = data_test.likelihood()
 print(f"True likelihood Test: {true_likelihood_test}")
-binned, stim_time = data_test.sample_data()
-dims = binned.shape
-X_test_array = binned.reshape(dims[0], args.R, int(dims[1] / args.R)).transpose(0, 2, 1)
+binned_test, stim_time = data_test.sample_data()
+dims = binned_test.shape
+X_test_array = binned_test.reshape(dims[0], args.R, int(dims[1] / args.R)).transpose(0, 2, 1)
 X_test = [torch.Tensor(X_test_array[i].astype(np.float64)) for i in range(dims[0])]
 
-start_epoch = 0
-
-# folder_name = 'paramSeed2973639709_dataSeed2580866146_L3_K50_R5_int.mltply25_int.add1_tauBeta100_tauS10_iters25000_notes-Random_States'
-# output_dir = os.path.join(os.getcwd(), 'outputs', folder_name, args.stage)
-# args.load_only = 1
-# args.num_epochs = 25000-1
-
-if args.load_only or args.load_and_train:
-    model, loss_function, start_epoch = load_model_checkpoint(output_dir, args.num_epochs)
-
-if args.load_only:
-        sys.exit()
-
 if not args.load_and_train:
+    os.makedirs(output_dir)
+    plot_spikes(binned, output_dir)
+    plot_intensity_and_latents(data_train.time, data_train.latent_factors, data_train.intensity, output_dir)
+    plot_latent_coupling(data_train.latent_coupling, output_dir)
     create_relevant_files(output_dir, args, data_seed)
+
     if isinstance(args.param_seed, int):
         torch.manual_seed(args.param_seed)
     model = TemporalConvNet(state_size, input_size, output_size, n_channels, output_size, bin_kernel_size,
@@ -140,8 +134,10 @@ if not args.load_and_train:
     # Attach hooks
     # model.register_hooks()
     loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
-    if args.param_seed == 'TRUTH':
-        model.init_ground_truth(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
+    if args.param_seed.lower() == 'truth':
+        model.init_states(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
+    elif args.param_seed.lower() == 'learned':
+        model.init_states(loss_function.state.clone(), Bspline_matrix)
 
 if args.cuda:
     model.cuda()

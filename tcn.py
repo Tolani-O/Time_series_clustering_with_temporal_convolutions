@@ -159,7 +159,7 @@ class TemporalConvNet(nn.Module):
 
     # Will need to train the network on the ground truth to initialize
     # The neuron couplings and firing rates at the ground truth
-    def init_ground_truth(self, latent_factors, Bspline_matrix):
+    def init_states(self, latent_factors, Bspline_matrix):
         V_inv = torch.pinverse(Bspline_matrix)
         beta = latent_factors @ V_inv
         self.state = nn.Parameter(torch.log(torch.exp(beta) - 1))
