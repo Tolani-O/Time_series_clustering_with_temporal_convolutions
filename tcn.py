@@ -74,6 +74,13 @@ class NegLogLikelihood(nn.Module):
         # Create loss
         self.mse_loss = nn.MSELoss()
 
+    def init_from_factors(self, latent_factors):
+        V_inv = torch.pinverse(self.Bspline_matrix)
+        beta = latent_factors @ V_inv
+        states = torch.log(torch.exp(beta) - 1)
+        self.state = nn.Parameter(states)
+        self.smoothness_budget = nn.Parameter(torch.zeros((self.smoothness_budget.shape[0], 1)))
+
     def likelihood_term(self, spike_trains, latent_coeffs, cluster_attn, firing_attn):
         # Compute the loss
         weighted_firing = cluster_attn * firing_attn
@@ -159,10 +166,14 @@ class TemporalConvNet(nn.Module):
 
     # Will need to train the network on the ground truth to initialize
     # The neuron couplings and firing rates at the ground truth
-    def init_states(self, latent_factors, Bspline_matrix):
+    def init_from_factors(self, latent_factors, Bspline_matrix):
         V_inv = torch.pinverse(Bspline_matrix)
         beta = latent_factors @ V_inv
-        self.state = nn.Parameter(torch.log(torch.exp(beta) - 1))
+        states = torch.log(torch.exp(beta) - 1)
+        self.init_from_states(states)
+
+    def init_from_states(self, latent_states):
+        self.state = nn.Parameter(latent_states)
 
     def register_hooks(self):
         def save_activation(name):

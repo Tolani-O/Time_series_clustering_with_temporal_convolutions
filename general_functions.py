@@ -98,26 +98,15 @@ def plot_bsplines(B, time, output_dir):
     plt.savefig(os.path.join(output_dir, 'groundTruth_bsplines.png'))
 
 
-def load_model_checkpoint(output_dir, epoch):
-    if os.path.isfile(os.path.join(output_dir, 'models', f'model_{epoch}.pth')):
-        model = torch.load(os.path.join(output_dir, 'models', f'model_{epoch}.pth'))
+def load_model_checkpoint(model_type, output_dir, folder_name, sub_folder_name, load_epoch):
+    load_dir = os.path.join(output_dir, folder_name, sub_folder_name, 'models')
+    file_name = os.path.join(load_dir, f'{model_type}_{load_epoch}.pth')
+    if os.path.isfile(file_name):
+        model = torch.load(file_name)
     else:
-        print(f'No model_{epoch}.pth file found in {output_dir}/models')
+        print(f'No {model_type}_{load_epoch}.pth file found in {load_dir}')
         model = None
-    if os.path.isfile(os.path.join(output_dir, 'models', f'loss_{epoch}.pth')):
-        loss_function = torch.load(os.path.join(output_dir, 'models', f'loss_{epoch}.pth'))
-    else:
-        print(f'No loss_{epoch}.pth file found in {output_dir}/models')
-        loss_function = None
-    start_epoch = 0
-    if os.path.isfile(os.path.join(output_dir, 'log_likelihoods_train.json')):
-        with open(os.path.join(output_dir, 'log_likelihoods_train.json'), 'rb') as file:
-            for _ in ijson.items(file, 'item'):
-                start_epoch += 1
-    else:
-        print(f'No log_likelihoods.json file found in {output_dir}')
-
-    return model, loss_function, start_epoch
+    return model
 
 
 def create_relevant_files(output_dir, args, data_seed):

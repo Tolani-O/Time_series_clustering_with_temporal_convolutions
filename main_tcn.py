@@ -29,8 +29,8 @@ parser.add_argument('--optim', type=str, default='Adam', help='optimizer to use 
 parser.add_argument('--nhid', type=int, default=150, help='number of hidden units per layer (default: 150)')
 parser.add_argument('--batch_size', type=int, default='10', help='the batch size for training')
 parser.add_argument('--plot_lkhd', type=int, default=0, help='')
-parser.add_argument('--load_only', type=int, default=0, help='')
-parser.add_argument('--load_and_train', type=int, default=0, help='')
+parser.add_argument('--load', type=int, default=0, help='')
+parser.add_argument('--train', type=int, default=0, help='')
 parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
 parser.add_argument('--tau_beta', type=int, default=100, help='Value for tau_beta')
 parser.add_argument('--tau_s', type=int, default=10, help='Value for tau_s')
@@ -42,7 +42,7 @@ parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
 parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
 parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
 parser.add_argument('--param_seed', type=int_or_str, default='Truth', help='options are: seed (int), Truth (str), Learned (str)')
-parser.add_argument('--stage', type=str, default='finetune', help='options are: initialize_output, initialize_map, finetune')
+parser.add_argument('--stage', type=str, default='finetune', help='options are: initialize_output, initialize_map, finetune, endtoend')
 
 args = parser.parse_args()
 
@@ -52,33 +52,57 @@ args.num_epochs = 25000
 args.lr = 1e-3
 args.tau_beta = 3000
 args.tau_s = 10000
-load_epoch = args.num_epochs - 1
+loss_load_epoch = args.num_epochs - 1
+model_load_epoch = args.num_epochs - 1
 
 
 if args.param_seed == '':
     args.param_seed = np.random.randint(0, 2 ** 32 - 1)
 data_seed = np.random.randint(0, 2 ** 32 - 1)
-sub_folder_name = args.stage
 
-if args.stage == 'initialize_map':
-    args.load_and_train = 1
-    args.param_seed = 'learned'
+model = None
+loss_function = None
+output_dir = os.path.join(os.getcwd(), 'outputs')
+if (args.stage == 'initialize_output' and args.load) or args.stage == 'initialize_map' or args.stage == 'finetune':
+    # (args.stage == 'initialize_output' and args.load):
+    # This says to load a continue checkpoint for loss from 'initialize_output'
+    # args.stage == 'initialize_map':
+    # We must load a loss checkpoint from 'initialize_output'
     sub_folder_name = 'initialize_output'
+    loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
+
+if (args.stage == 'initialize_map' and args.load) or args.stage == 'finetune':
+    # (args.stage == 'initialize_map' and args.load):
+    # This says to load a continue checkpoint for model from 'initialize_map'
+    # args.stage == 'finetune':
+    # We must load a model checkpoint from 'initialize_map'
+    sub_folder_name = 'initialize_map'
+    model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
+
+if (args.stage == 'finetune' and args.load) or (args.stage == 'endtoend' and args.load):
+    # This says to load a continue checkpoint for model from 'finetune'
+    sub_folder_name = args.stage
+    model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
+    loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
 
 start_epoch = 0
-if args.load_only or args.load_and_train:
-    load_dir = os.path.join(os.getcwd(), 'outputs', folder_name, sub_folder_name)
-    model, loss_function, start_epoch = load_model_checkpoint(load_dir, load_epoch)
+if args.load:
+    if args.stage == 'initialize_output':
+        start_epoch = loss_load_epoch
+    else:
+        start_epoch = model_load_epoch
 else:
-    folder_name = (f'paramSeed{args.param_seed}_dataSeed{data_seed}_L{args.L}_K{args.K}_R{args.R}'
-                   f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
-                   f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
+    args.train = 1
+    if args.stage == 'initialize_output':
+        folder_name = (f'paramSeed{args.param_seed}_dataSeed{data_seed}_L{args.L}_K{args.K}_R{args.R}'
+                       f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
+                       f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
 
-if args.load_only:
+if not args.train:
     sys.exit()
 
 print(f'folder_name: {folder_name}')
-output_dir = os.path.join(os.getcwd(), 'outputs', folder_name, args.stage)
+output_dir = os.path.join(output_dir, folder_name, args.stage)
 if torch.cuda.is_available():
     if not args.cuda:
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -120,24 +144,27 @@ dims = binned_test.shape
 X_test_array = binned_test.reshape(dims[0], args.R, int(dims[1] / args.R)).transpose(0, 2, 1)
 X_test = [torch.Tensor(X_test_array[i].astype(np.float64)) for i in range(dims[0])]
 
-if not args.load_and_train:
-    os.makedirs(output_dir)
-    plot_spikes(binned, output_dir)
-    plot_intensity_and_latents(data_train.time, data_train.latent_factors, data_train.intensity, output_dir)
-    plot_latent_coupling(data_train.latent_coupling, output_dir)
-    create_relevant_files(output_dir, args, data_seed)
-
-    if isinstance(args.param_seed, int):
-        torch.manual_seed(args.param_seed)
-    model = TemporalConvNet(state_size, input_size, output_size, n_channels, output_size, bin_kernel_size,
-                            kernel_size, args.dropout)
-    # Attach hooks
-    # model.register_hooks()
-    loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
+if not args.load:
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        plot_spikes(binned, output_dir)
+        plot_intensity_and_latents(data_train.time, data_train.latent_factors, data_train.intensity, output_dir)
+        plot_latent_coupling(data_train.latent_coupling, output_dir)
+        create_relevant_files(output_dir, args, data_seed)
+    if args.stage == 'initialize_output' or args.stage == 'endtoend':
+        loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
+    if args.stage == 'initialize_map' or args.stage == 'endtoend':
+        if isinstance(args.param_seed, int):
+            torch.manual_seed(args.param_seed)
+        model = TemporalConvNet(state_size, input_size, output_size, n_channels, output_size, bin_kernel_size,
+                                kernel_size, args.dropout)
+        # Attach hooks
+        # model.register_hooks()
+        model.init_from_states(loss_function.state.clone())
     if args.param_seed.lower() == 'truth':
-        model.init_states(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
-    elif args.param_seed.lower() == 'learned':
-        model.init_states(loss_function.state.clone(), Bspline_matrix)
+        loss_function.init_from_factors(torch.tensor(data_train.latent_factors).float())
+        if args.stage != 'initialize_output':
+            model.init_from_factors(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
 
 if args.cuda:
     model.cuda()
@@ -174,7 +201,7 @@ if __name__ == "__main__":
         learn_initial_maps(globals())
         sys.exit()
 
-    if args.stage == 'finetune':
+    if args.stage == 'finetune' or args.stage == 'endtoend':
         finetune_maps(globals())
         sys.exit()
 
