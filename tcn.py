@@ -110,8 +110,8 @@ class NegLogLikelihood(nn.Module):
             loss = negLogLikelihood + penalty
             return loss, negLogLikelihood, latent_factors, cluster_attn, firing_attn, smoothness_budget_constrained
         elif mode=='initialize_map':
-            cluster_loss = self.mse_loss(self.cluster_attn, cluster_attn)
-            firing_loss = self.mse_loss(self.firing_attn, firing_attn)
+            cluster_loss = self.mse_loss(cluster_attn, self.cluster_attn)
+            firing_loss = self.mse_loss(firing_attn, self.firing_attn)
             loss = cluster_loss + firing_loss
             return loss
         else:

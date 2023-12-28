@@ -5,7 +5,36 @@ import seaborn as sns
 import torch
 from matplotlib.figure import figaspect
 import json
-import ijson
+import argparse
+
+def get_parser():
+    parser = argparse.ArgumentParser(description='Sequence Modeling - Polyphonic Music')
+    parser.add_argument('--cuda', action='store_false', default=False, help='use CUDA (default: False)')
+    parser.add_argument('--dropout', type=float, default=0.25, help='dropout applied to layers (default: 0.25)')
+    parser.add_argument('--clip', type=float, default=0.2, help='gradient clip, -1 means no clip (default: 0.2)')
+    parser.add_argument('--ksize', type=int, default=5, help='kernel size (default: 5)')
+    parser.add_argument('--levels', type=int, default=4, help='# of levels (default: 4)')
+    parser.add_argument('--log_interval', type=int, default=100, metavar='N', help='report interval (default: 100')
+    parser.add_argument('--lr', type=float, default=1e-3, help='initial learning rate (default: 1e-3)')
+    parser.add_argument('--optim', type=str, default='Adam', help='optimizer to use (default: Adam)')
+    parser.add_argument('--nhid', type=int, default=150, help='number of hidden units per layer (default: 150)')
+    parser.add_argument('--batch_size', type=int, default='10', help='the batch size for training')
+    parser.add_argument('--plot_lkhd', type=int, default=0, help='')
+    parser.add_argument('--load', type=int, default=0, help='')
+    parser.add_argument('--train', type=int, default=0, help='')
+    parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
+    parser.add_argument('--tau_beta', type=int, default=100, help='Value for tau_beta')
+    parser.add_argument('--tau_s', type=int, default=10, help='Value for tau_s')
+    parser.add_argument('--num_epochs', type=int, default=1500, help='Number of training epochs')
+    parser.add_argument('--notes', type=str, default='empty', help='Run notes')
+    parser.add_argument('--K', type=int, default=50, help='Number of neurons')
+    parser.add_argument('--R', type=int, default=5, help='Number of trials')
+    parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
+    parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
+    parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
+    parser.add_argument('--param_seed', type=int_or_str, default='', help='options are: seed (int), Truth (str)')
+    parser.add_argument('--stage', type=str, default='finetune', help='options are: initialize_output, initialize_map, finetune, endtoend')
+    return parser
 
 
 def create_precision_matrix(P):
@@ -158,12 +187,13 @@ def plot_outputs(latent_factors, cluster_attn, firing_attn, true_intensity, stim
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    plt.figure(figsize=(10,10))
+    height, width = [a/b*10 for a,b in zip(cluster_attn.shape, (50, 3))]
+    plt.figure(figsize=(width,height))
     sns.heatmap(cluster_attn, annot=True, fmt=".2f", annot_kws={"color": "blue"})
     plt.title('Heatmap of cluster_attn')
     plt.savefig(os.path.join(output_dir, f'cluster_attn_{epoch}.png'))
 
-    plt.figure(figsize=(10,10))
+    plt.figure(figsize=(5,height))
     sns.heatmap(firing_attn, annot=True, fmt=".2f", annot_kws={"color": "blue"})
     plt.title('Heatmap of firing_attn')
     plt.savefig(os.path.join(output_dir, f'firing_attn_{epoch}.png'))
@@ -190,7 +220,7 @@ def plot_outputs(latent_factors, cluster_attn, firing_attn, true_intensity, stim
     plt.savefig(os.path.join(output_dir, f'main_LatentFactors_{epoch}.png'))
 
     global_max = np.max(learned_intensity)
-    upper_limit = global_max * 1.1
+    upper_limit = global_max + batch * 0.01
     for i in range(0, K, batch):
         this_batch = batch if i + batch < K else K - i
 

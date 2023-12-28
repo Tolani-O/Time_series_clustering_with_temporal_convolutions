@@ -1,10 +1,14 @@
 import time
 import torch
-from src.TCN.general_functions import write_log_and_model, plot_outputs, write_losses, plot_losses
+from src.TCN.general_functions import write_log_and_model, plot_outputs, write_losses, plot_losses, \
+    load_model_checkpoint
+from src.TCN.tcn import NegLogLikelihood
 
 
 def define_global_vars(global_vars):
-    global loss_function, loss_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, start_epoch, Bspline_matrix
+    global model, loss_function, loss_optimizer, data_train, data_test, X_train, X_test, stim_time, args, output_dir, \
+        start_epoch, Bspline_matrix, Delta2TDelta2, folder_name, loss_load_epoch, state_size
+    model = global_vars['model']
     loss_function = global_vars['loss_function']
     loss_optimizer = global_vars['loss_optimizer']
     data_train = global_vars['data_train']
@@ -16,6 +20,29 @@ def define_global_vars(global_vars):
     output_dir = global_vars['output_dir']
     start_epoch = global_vars['start_epoch']
     Bspline_matrix = global_vars['Bspline_matrix']
+    Delta2TDelta2 = global_vars['Delta2TDelta2']
+    folder_name = global_vars['folder_name']
+    loss_load_epoch = global_vars['loss_load_epoch']
+    state_size = global_vars['state_size']
+
+
+def init_initialize_output_models(global_vars):
+    define_global_vars(global_vars)
+    if args.load:
+        # This says to load a continue checkpoint for loss from 'initialize_output'
+        sub_folder_name = args.stage
+        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
+        start_epoch = loss_load_epoch
+    else:
+        dt = torch.round(torch.tensor(stim_time[1] - stim_time[0]) * 1000) / 1000
+        loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
+        if isinstance(args.param_seed, str) and args.param_seed.lower() == 'truth':
+            loss_function.init_from_factors(torch.tensor(data_train.latent_factors).float())
+        folder_name = (f'paramSeed{args.param_seed}_dataSeed{args.data_seed}_L{args.L}_K{args.K}_R{args.R}'
+                       f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
+                       f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
+        start_epoch = 0
+    return model, loss_function, start_epoch, folder_name
 
 
 def initialization_training_epoch(log_likelihoods, losses):

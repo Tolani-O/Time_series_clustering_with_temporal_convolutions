@@ -1,11 +1,14 @@
 import time
 import torch
-from src.TCN.general_functions import plot_outputs, write_log_and_model, write_losses, plot_losses
+from src.TCN.general_functions import plot_outputs, write_log_and_model, write_losses, plot_losses, \
+    load_model_checkpoint
+from src.TCN.tcn import NegLogLikelihood, TemporalConvNet
 
 
 def define_global_vars(global_vars):
     global model, loss_function, model_optimizer, loss_optimizer, dataloader, data_train, data_test, X_train, X_test, \
-        stim_time, args, output_dir, start_epoch, Bspline_matrix
+        stim_time, args, output_dir, start_epoch, Bspline_matrix, Delta2TDelta2, folder_name, model_load_epoch, \
+        loss_load_epoch, state_size
     model = global_vars['model']
     loss_function = global_vars['loss_function']
     model_optimizer = global_vars['model_optimizer']
@@ -20,6 +23,53 @@ def define_global_vars(global_vars):
     output_dir = global_vars['output_dir']
     start_epoch = global_vars['start_epoch']
     Bspline_matrix = global_vars['Bspline_matrix']
+    Delta2TDelta2 = global_vars['Delta2TDelta2']
+    folder_name = global_vars['folder_name']
+    model_load_epoch = global_vars['model_load_epoch']
+    loss_load_epoch = global_vars['loss_load_epoch']
+    state_size = global_vars['state_size']
+    return folder_name
+
+
+def init_finetune_models(global_vars):
+    folder_name = define_global_vars(global_vars)
+    if args.stage == 'finetune':
+        sub_folder_name = 'initialize_output'
+        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
+        sub_folder_name = 'initialize_map'
+        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
+        start_epoch = 0
+    if args.load:
+        # This says to load a continue checkpoint for model from 'finetune'
+        sub_folder_name = args.stage
+        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
+        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
+        start_epoch = model_load_epoch
+    elif args.stage == 'endtoend':
+        dt = torch.round(torch.tensor(stim_time[1] - stim_time[0]) * 1000) / 1000
+        loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
+        if isinstance(args.param_seed, int):
+            torch.manual_seed(args.param_seed)
+        n_channels = [args.nhid] * args.levels
+        input_size = args.R
+        output_size = args.nhid
+        bin_kernel_size = 2
+        model = TemporalConvNet(state_size, input_size, output_size, n_channels, output_size, bin_kernel_size,
+                                args.ksize, args.dropout)
+        # Attach hooks
+        # model.register_hooks()
+        model.init_from_states(loss_function.state.clone())
+        if isinstance(args.param_seed, str) and args.param_seed.lower() == 'truth':
+            loss_function.init_from_factors(torch.tensor(data_train.latent_factors).float())
+            model.init_from_factors(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
+        folder_name = (f'paramSeed{args.param_seed}_dataSeed{args.data_seed}_L{args.L}_K{args.K}_R{args.R}'
+                       f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
+                       f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
+        start_epoch = 0
+    loss_function.state.requires_grad = False
+    loss_function.cluster_attn.requires_grad = False
+    loss_function.firing_attn.requires_grad = False
+    return model, loss_function, start_epoch, folder_name
 
 
 def initialization_training_epoch(log_likelihoods, losses):
