@@ -8,7 +8,7 @@ from src.TCN.tcn import TemporalConvNet
 
 def define_global_vars(global_vars):
     global model, loss_function, model_optimizer, dataloader, data_train, data_test, X_train, X_test, stim_time, args, \
-        output_dir, start_epoch, Bspline_matrix, Delta2TDelta2, folder_name, model_load_epoch, loss_load_epoch, state_size
+        output_dir, start_epoch, Bspline_matrix, Delta2TDelta2, state_size
     model = global_vars['model']
     loss_function = global_vars['loss_function']
     model_optimizer = global_vars['model_optimizer']
@@ -23,22 +23,20 @@ def define_global_vars(global_vars):
     start_epoch = global_vars['start_epoch']
     Bspline_matrix = global_vars['Bspline_matrix']
     Delta2TDelta2 = global_vars['Delta2TDelta2']
-    folder_name = global_vars['folder_name']
-    model_load_epoch = global_vars['model_load_epoch']
-    loss_load_epoch = global_vars['loss_load_epoch']
     state_size = global_vars['state_size']
 
 
 def init_initialize_map_models(global_vars):
     define_global_vars(global_vars)
+    folder_name = args.init_load_folder
     # We must load a loss checkpoint from 'initialize_output'
     sub_folder_name = 'initialize_output'
-    loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
+    loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
     if args.load:
         # This says to load a continue checkpoint for model from 'initialize_map'
         sub_folder_name = args.stage
-        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
-        start_epoch = model_load_epoch
+        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, args.init_map_load_epoch)
+        start_epoch = args.init_map_load_epoch
     else:
         if isinstance(args.param_seed, int):
             torch.manual_seed(args.param_seed)

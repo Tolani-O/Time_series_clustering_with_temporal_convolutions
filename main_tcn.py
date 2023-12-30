@@ -19,15 +19,20 @@ from scipy.interpolate import BSpline
 
 args = get_parser().parse_args()
 
-args.stage = 'initialize_map'
-args.load = 0
-folder_name = 'paramSeed192600038_dataSeed4223320140_L3_K50_R5_int.mltply25_int.add1_tauBeta3000_tauS10000_iters25000_notes-initialize_states_heavy_penalty'
-args.num_epochs = 25000
-args.lr = 1e-3
-args.tau_beta = 3000
-args.tau_s = 10000
-loss_load_epoch = args.num_epochs - 1
-model_load_epoch = args.num_epochs - 1
+# args.K = 200
+# args.R = 50
+# args.stage = 'finetune'
+# args.load = 0
+# folder_name = 'paramSeed1029427283_dataSeed2219104129_L3_K200_R50_int.mltply25_int.add1_tauBeta3000_tauS10000_iters25000_notes-empty'
+# args.num_epochs = 25000
+# args.lr = 1e-4
+# if args.stage == 'initialize_output':
+#     args.lr = 1e-2
+# args.tau_beta = 3000
+# args.tau_s = 10000
+# args.tau_f = 800
+# loss_load_epoch = args.num_epochs - 1
+# model_load_epoch = 4300 #args.num_epochs - 1
 
 
 if args.param_seed == '':

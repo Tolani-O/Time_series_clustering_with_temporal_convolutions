@@ -7,8 +7,7 @@ from src.TCN.tcn import NegLogLikelihood, TemporalConvNet
 
 def define_global_vars(global_vars):
     global model, loss_function, model_optimizer, loss_optimizer, dataloader, data_train, data_test, X_train, X_test, \
-        stim_time, args, output_dir, start_epoch, Bspline_matrix, Delta2TDelta2, folder_name, model_load_epoch, \
-        loss_load_epoch, state_size
+        stim_time, args, output_dir, start_epoch, Bspline_matrix, Delta2TDelta2, state_size
     model = global_vars['model']
     loss_function = global_vars['loss_function']
     model_optimizer = global_vars['model_optimizer']
@@ -24,27 +23,24 @@ def define_global_vars(global_vars):
     start_epoch = global_vars['start_epoch']
     Bspline_matrix = global_vars['Bspline_matrix']
     Delta2TDelta2 = global_vars['Delta2TDelta2']
-    folder_name = global_vars['folder_name']
-    model_load_epoch = global_vars['model_load_epoch']
-    loss_load_epoch = global_vars['loss_load_epoch']
     state_size = global_vars['state_size']
-    return folder_name
 
 
 def init_finetune_models(global_vars):
-    folder_name = define_global_vars(global_vars)
+    define_global_vars(global_vars)
+    folder_name = args.args.init_load_folder
     if args.stage == 'finetune':
         sub_folder_name = 'initialize_output'
-        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
+        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
         sub_folder_name = 'initialize_map'
-        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
+        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, args.init_map_load_epoch)
         start_epoch = 0
     if args.load:
         # This says to load a continue checkpoint for model from 'finetune'
         sub_folder_name = args.stage
-        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, model_load_epoch)
-        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, loss_load_epoch)
-        start_epoch = model_load_epoch
+        model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, args.init_map_load_epoch)
+        loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
+        start_epoch = args.init_map_load_epoch
     elif args.stage == 'endtoend':
         dt = torch.round(torch.tensor(stim_time[1] - stim_time[0]) * 1000) / 1000
         loss_function = NegLogLikelihood(state_size, len(X_train), Bspline_matrix, Delta2TDelta2, dt)
@@ -64,7 +60,7 @@ def init_finetune_models(global_vars):
             model.init_from_factors(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
         folder_name = (f'paramSeed{args.param_seed}_dataSeed{args.data_seed}_L{args.L}_K{args.K}_R{args.R}'
                        f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
-                       f'_tauS{args.tau_s}_iters{args.num_epochs}_notes-{args.notes}')
+                       f'_tauS{args.tau_s}_tauF{args.tau_f}_lr{args.lr}_iters{args.num_epochs}_notes-{args.notes}')
         start_epoch = 0
     loss_function.state.requires_grad = False
     loss_function.cluster_attn.requires_grad = False
