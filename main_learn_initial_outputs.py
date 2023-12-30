@@ -24,10 +24,11 @@ def define_global_vars(global_vars):
     folder_name = global_vars['folder_name']
     loss_load_epoch = global_vars['loss_load_epoch']
     state_size = global_vars['state_size']
+    return folder_name
 
 
 def init_initialize_output_models(global_vars):
-    define_global_vars(global_vars)
+    folder_name = define_global_vars(global_vars)
     if args.load:
         # This says to load a continue checkpoint for loss from 'initialize_output'
         sub_folder_name = args.stage
@@ -50,7 +51,7 @@ def initialization_training_epoch(log_likelihoods, losses):
     loss_optimizer.zero_grad()
     data = torch.stack(X_train)
     loss, negLogLikelihood, latent_factors, cluster_attn, firing_attn, smoothness_budget_constrained \
-        = loss_function(data, tau_beta=args.tau_beta, tau_s=args.tau_s, mode='initialize_output')
+        = loss_function(data, tau_beta=args.tau_beta, tau_s=args.tau_s, tau_f=args.tau_f, mode='initialize_output')
     log_likelihoods.append(-negLogLikelihood.item())
     losses.append(-loss.item())
     if args.clip > 0:

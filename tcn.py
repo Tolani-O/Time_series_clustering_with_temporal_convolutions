@@ -81,32 +81,33 @@ class NegLogLikelihood(nn.Module):
         self.state = nn.Parameter(states)
         self.smoothness_budget = nn.Parameter(torch.zeros((self.smoothness_budget.shape[0], 1)))
 
-    def likelihood_term(self, spike_trains, latent_coeffs, cluster_attn, firing_attn):
+    def likelihood_term(self, spike_trains, latent_factors, cluster_attn, firing_attn):
         # Compute the loss
         weighted_firing = cluster_attn * firing_attn
-        latent_factors = torch.matmul(latent_coeffs, self.Bspline_matrix)
         intensity_functions = torch.matmul(weighted_firing, latent_factors).unsqueeze(2)
         intensity_functions_repeated = intensity_functions.repeat_interleave(spike_trains.shape[2], dim=2)
         negLogLikelihood = -torch.sum(torch.log(intensity_functions_repeated) * spike_trains - intensity_functions * self.del_t)
-        return negLogLikelihood, latent_factors
+        return negLogLikelihood
 
-    def penalty_term(self, latent_factors, tau_beta, tau_s):
-        smoothness_budget_constrained = F.softmax(self.smoothness_budget, dim=0)
+    def penalty_term(self, latent_factors, smoothness_budget, firing_attn, tau_beta, tau_s, tau_f):
+        smoothness_budget_constrained = F.softmax(smoothness_budget, dim=0)
         beta_s2_penalty = tau_beta * (smoothness_budget_constrained.t() @ torch.sum((latent_factors @ self.Delta2TDelta2) * latent_factors, axis=1)).squeeze()
-        smoothness_budget_norm = (self.smoothness_budget.t() @ self.smoothness_budget).squeeze()
-        smoothness_budget_penalty = tau_s * smoothness_budget_norm
-        penalty = beta_s2_penalty + smoothness_budget_penalty
+        smoothness_budget_penalty = tau_s * torch.sum(smoothness_budget ** 2)
+        firing_attn_penalty = tau_f * torch.sum(firing_attn ** 2)
+        penalty = beta_s2_penalty + smoothness_budget_penalty + firing_attn_penalty
         return penalty, smoothness_budget_constrained
 
-    def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, tau_beta=1, tau_s=1, mode=''):
+    def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, tau_beta=1, tau_s=1, tau_f=1, mode=''):
         tau_beta = torch.tensor(tau_beta)
         tau_s = torch.tensor(tau_s)
+        tau_f = torch.tensor(tau_f)
         if mode=='initialize_output':
             latent_coeffs = F.softplus(self.state)
+            latent_factors = torch.matmul(latent_coeffs, self.Bspline_matrix)
             cluster_attn = F.softmax(self.cluster_attn, dim=-1)
             firing_attn = F.softplus(self.firing_attn)
-            negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, latent_coeffs, cluster_attn, firing_attn)
-            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors, tau_beta, tau_s)
+            negLogLikelihood = self.likelihood_term(spike_trains, latent_factors, cluster_attn, firing_attn)
+            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors, self.smoothness_budget, firing_attn, tau_beta, tau_s, tau_f)
             loss = negLogLikelihood + penalty
             return loss, negLogLikelihood, latent_factors, cluster_attn, firing_attn, smoothness_budget_constrained
         elif mode=='initialize_map':
@@ -115,8 +116,9 @@ class NegLogLikelihood(nn.Module):
             loss = cluster_loss + firing_loss
             return loss
         else:
-            negLogLikelihood, latent_factors = self.likelihood_term(spike_trains, latent_coeffs, cluster_attn, firing_attn)
-            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors, tau_beta, tau_s)
+            latent_factors = torch.matmul(latent_coeffs, self.Bspline_matrix)
+            negLogLikelihood = self.likelihood_term(spike_trains, latent_factors, cluster_attn, firing_attn)
+            penalty, smoothness_budget_constrained = self.penalty_term(latent_factors, self.smoothness_budget, firing_attn, tau_beta, tau_s, tau_f)
             loss = negLogLikelihood + penalty
             return loss, negLogLikelihood, latent_factors, smoothness_budget_constrained
 
