@@ -61,12 +61,12 @@ def init_initialize_map_models(global_vars):
 
 def initialization_training_epoch(losses):
     model.train()
-    for binned in dataloader:
+    for binned, idx in dataloader:
         if args.cuda: binned = binned.cuda()
         # Zero out the gradients for optimizer
         model_optimizer.zero_grad()
         latent_coeffs, cluster_attn, firing_attn = model(binned)
-        loss = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, mode='initialize_map')
+        loss = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, idx=idx, mode='initialize_map')
         losses.append(-loss.item())
         if args.clip > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -77,10 +77,10 @@ def initialization_training_epoch(losses):
     return losses
 
 
-def initialization_evaluation(losses):
+def initialization_evaluation(data, losses):
     model.eval()
     with torch.no_grad():
-        data = torch.stack(X_test)
+        data = torch.stack(data)
         if args.cuda: data = data.cuda()
         latent_coeffs, cluster_attn, firing_attn = model(data)
         loss = loss_function(cluster_attn=cluster_attn, firing_attn=firing_attn, mode='initialize_map')
@@ -97,8 +97,8 @@ def learn_initial_maps(global_vars):
     start_time = time.time()  # Record the start time of the epoch
     for epoch in range(start_epoch, start_epoch + args.num_epochs):
         losses = initialization_training_epoch(losses)
-        losses_train, cluster_attn_train, firing_attn_train = initialization_evaluation(losses_train)
-        losses_test, cluster_attn_test, firing_attn_test = initialization_evaluation(losses_test)
+        losses_train, cluster_attn_train, firing_attn_train = initialization_evaluation(X_train, losses_train)
+        losses_test, cluster_attn_test, firing_attn_test = initialization_evaluation(X_test, losses_test)
         if epoch % args.log_interval == 0 or epoch == start_epoch + args.num_epochs - 1:
             end_time = time.time()  # Record the end time of the epoch
             elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch

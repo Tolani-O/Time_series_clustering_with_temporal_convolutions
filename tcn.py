@@ -97,7 +97,7 @@ class NegLogLikelihood(nn.Module):
         penalty = beta_s2_penalty + smoothness_budget_penalty + firing_attn_penalty
         return penalty, smoothness_budget_constrained
 
-    def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, tau_beta=1, tau_s=1, tau_f=1, mode=''):
+    def forward(self, spike_trains=None, latent_coeffs=None, cluster_attn=None, firing_attn=None, idx=None, tau_beta=1, tau_s=1, tau_f=1, mode=''):
         tau_beta = torch.tensor(tau_beta)
         tau_s = torch.tensor(tau_s)
         tau_f = torch.tensor(tau_f)
@@ -111,8 +111,10 @@ class NegLogLikelihood(nn.Module):
             loss = negLogLikelihood + penalty
             return loss, negLogLikelihood, latent_factors, cluster_attn, firing_attn, smoothness_budget_constrained
         elif mode=='initialize_map':
-            cluster_loss = self.mse_loss(cluster_attn, self.cluster_attn)
-            firing_loss = self.mse_loss(firing_attn, self.firing_attn)
+            if idx is None:
+                idx = torch.arange(cluster_attn.size(0))
+            cluster_loss = self.mse_loss(cluster_attn, self.cluster_attn[idx])
+            firing_loss = self.mse_loss(firing_attn, self.firing_attn[idx])
             loss = cluster_loss + firing_loss
             return loss
         else:
@@ -217,4 +219,4 @@ class CustomDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        return self.data[idx], idx

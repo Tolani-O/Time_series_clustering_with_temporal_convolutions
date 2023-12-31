@@ -28,7 +28,7 @@ def define_global_vars(global_vars):
 
 def init_finetune_models(global_vars):
     define_global_vars(global_vars)
-    folder_name = args.args.init_load_folder
+    folder_name = args.init_load_folder
     if args.stage == 'finetune':
         sub_folder_name = 'initialize_output'
         loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
@@ -71,7 +71,7 @@ def init_finetune_models(global_vars):
 def initialization_training_epoch(log_likelihoods, losses):
     model.train()
     loss_function.train()
-    for binned in dataloader:
+    for binned, _ in dataloader:
         if args.cuda: binned = binned.cuda()
         # Zero out the gradients for both optimizers
         model_optimizer.zero_grad()
