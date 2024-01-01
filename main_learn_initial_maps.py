@@ -30,11 +30,11 @@ def init_initialize_map_models(global_vars):
     define_global_vars(global_vars)
     folder_name = args.init_load_folder
     # We must load a loss checkpoint from 'initialize_output'
-    sub_folder_name = 'initialize_output'
+    sub_folder_name = args.init_load_subfolder_outputs
     loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
     if args.load:
         # This says to load a continue checkpoint for model from 'initialize_map'
-        sub_folder_name = args.stage
+        sub_folder_name = args.init_load_subfolder_map
         model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, args.init_map_load_epoch)
         start_epoch = args.init_map_load_epoch
     else:

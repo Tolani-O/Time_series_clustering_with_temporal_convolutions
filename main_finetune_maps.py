@@ -30,14 +30,14 @@ def init_finetune_models(global_vars):
     define_global_vars(global_vars)
     folder_name = args.init_load_folder
     if args.stage == 'finetune':
-        sub_folder_name = 'initialize_output'
+        sub_folder_name = args.init_load_subfolder_outputs
         loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
-        sub_folder_name = 'initialize_map'
+        sub_folder_name = args.init_load_subfolder_map
         model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, args.init_map_load_epoch)
         start_epoch = 0
     if args.load:
         # This says to load a continue checkpoint for model from 'finetune'
-        sub_folder_name = args.stage
+        sub_folder_name = args.init_load_subfolder_finetune
         model = load_model_checkpoint('model', output_dir, folder_name, sub_folder_name, args.init_map_load_epoch)
         loss_function = load_model_checkpoint('loss', output_dir, folder_name, sub_folder_name, args.init_loss_load_epoch)
         start_epoch = args.init_map_load_epoch
@@ -59,8 +59,7 @@ def init_finetune_models(global_vars):
             loss_function.init_from_factors(torch.tensor(data_train.latent_factors).float())
             model.init_from_factors(torch.tensor(data_train.latent_factors).float(), Bspline_matrix)
         folder_name = (f'paramSeed{args.param_seed}_dataSeed{args.data_seed}_L{args.L}_K{args.K}_R{args.R}'
-                       f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}_tauBeta{args.tau_beta}'
-                       f'_tauS{args.tau_s}_tauF{args.tau_f}_lr{args.lr}_iters{args.num_epochs}_notes-{args.notes}')
+                       f'_int.mltply{args.intensity_mltply}_int.add{args.intensity_bias}')
         start_epoch = 0
     loss_function.state.requires_grad = False
     loss_function.cluster_attn.requires_grad = False

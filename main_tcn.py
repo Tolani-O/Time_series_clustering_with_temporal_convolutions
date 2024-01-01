@@ -56,9 +56,6 @@ state_size = (args.L, Bspline_matrix.shape[0])
 Delta2 = create_second_diff_matrix(stim_time.shape[0])
 Delta2TDelta2 = torch.tensor(Delta2.T @ Delta2).float()
 
-# Instantiate the dataset and dataloader
-dataset = CustomDataset(X_train)
-dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 # create some validation data
 data_test = DataAnalyzer().initialize(K=args.K, R=args.R, intensity_mltply=args.intensity_mltply,
                                      intensity_bias=args.intensity_bias, max_offset=0)
@@ -77,6 +74,10 @@ loss_optimizer = None
 output_dir = os.path.join(os.getcwd(), 'outputs')
 if args.stage == 'initialize_output':
     model, loss_function, start_epoch, folder_name = init_initialize_output_models(globals())
+else:
+    # Instantiate the dataset and dataloader
+    dataset = CustomDataset(X_train)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 if args.stage == 'initialize_map':
     model, loss_function, start_epoch, folder_name = init_initialize_map_models(globals())
 if args.stage == 'finetune' or args.stage == 'endtoend':
@@ -88,7 +89,9 @@ if not args.train:
     sys.exit()
 
 print(f'folder_name: {folder_name}')
-output_dir = os.path.join(output_dir, folder_name, args.stage)
+output_dir = os.path.join(output_dir, folder_name,
+                          f'{args.stage}_tauBeta{args.tau_beta}_tauS{args.tau_s}_tauF{args.tau_f}_'
+                          f'_batchSize{args.batch_size}_lr{args.lr}_iters{args.num_epochs}_notes-{args.notes}')
 
 if not args.load:
     if not os.path.exists(output_dir):
